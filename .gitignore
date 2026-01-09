@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs / runtime
+logs/
+*.log
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets (if ever added later)
+.env

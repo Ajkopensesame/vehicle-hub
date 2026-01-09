@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""
+Pajero Vehicle Hub – Known Good Reference
+Arduino Uno -> BBB -> WebSocket bridge
+
+- Serial: /dev/ttyACM0 @ 115200
+- Protocol: newline-delimited JSON
+- WebSocket: ws://0.0.0.0:8765
+"""
+
+import asyncio
+import json
+import logging
+import time
+from typing import Dict, Any, Set
+
+import serial
+import websockets
+
+# =====================
+# Configuration
+# =====================
+SERIAL_PORT = "/dev/ttyACM0"
+SERIAL_BAUD = 115200
+SERIAL_TIMEOUT = 1.0
+
+WS_HOST = "0.0.0.0"
+WS_PORT = 8765
+
+SERIAL_RETRY_SEC = 1.0
+
+# =====================
+# Logging
+# =====================
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s"
+)
+log = logging.getLogger("vehicle-hub")
+
+# =====================
+# Shared state
+# =====================
+latest_frame: Dict[str, Any] = {
+    "type": "hub_init",
+    "serial_ok": False,
+    "serial_error": "not connected",
+}
+
+clients: Set[websockets.WebSocketServerProtocol] = set()
+
+# =====================
+# Serial reader
+# =====================
+async def serial_task():
+    global latest_frame
+
+    while True:
+        try:
+            log.info(f"Opening serial {SERIAL_PORT} @ {SERIAL_BAUD}")
+            ser = serial.Serial(
+                SERIAL_PORT,
+                SERIAL_BAUD,
+                timeout=SERIAL_TIMEOUT,
+            )
+            log.info("Serial open OK")
+
+            latest_frame["_hub"] = {
+                "serial_ok": True,
+                "serial_error": "",
+            }
+
+            while True:
+                line = ser.readline().decode(errors="ignore").strip()
+                if not line:
+                    continue
+
+                try:
+                    frame = json.loads(line)
+                    latest_frame = frame
+                    latest_frame["_hub"] = {
+                        "ts_ms": int(time.time() * 1000),
+                        "serial_ok": True,
+                        "serial_error": "",
+                    }
+                except json.JSONDecodeError:
+                    log.warning(f"Bad JSON: {line}")
+
+        except Exception as e:
+            log.warning(f"Serial unavailable: {e}")
+            latest_frame["_hub"] = {
+                "serial_ok": False,
+                "serial_error": str(e),
+            }
+            await asyncio.sleep(SERIAL_RETRY_SEC)
+
+# =====================
+# WebSocket handler
+# =====================
+async def ws_handler(ws):
+    clients.add(ws)
+    log.info("WebSocket client connected")
+
+    # Send hello immediately
+    await ws.send(json.dumps({
+        "type": "hello",
+        "ts_ms": int(time.time() * 1000),
+        "serial_ok": latest_frame.get("_hub", {}).get("serial_ok", False),
+        "serial_error": latest_frame.get("_hub", {}).get("serial_error", ""),
+    }))
+
+    try:
+        while True:
+            await ws.send(json.dumps(latest_frame))
+            await asyncio.sleep(0.05)  # 20 Hz
+    except websockets.ConnectionClosed:
+        pass
+    finally:
+        clients.discard(ws)
+        log.info("WebSocket client disconnected")
+
+# =====================
+# Main
+# =====================
+async def main():
+    log.info(f"WebSocket binding ws://{WS_HOST}:{WS_PORT}")
+    ws_server = await websockets.serve(ws_handler, WS_HOST, WS_PORT)
+
+    await asyncio.gather(
+        serial_task(),
+        ws_server.wait_closed(),
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())

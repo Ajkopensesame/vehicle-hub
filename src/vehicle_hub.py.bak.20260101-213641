@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""
+Pajero Vehicle Hub – KNOWN GOOD
+Arduino Uno -> BeagleBone -> WebSocket
+
+Serial: /dev/ttyACM0 @ 115200
+Protocol: newline-delimited JSON
+WebSocket: ws://0.0.0.0:8765
+"""
+
+import asyncio
+import json
+import logging
+import serial
+import websockets
+from typing import Set
+
+# ---------------------
+# Configuration
+# ---------------------
+SERIAL_PORT = "/dev/ttyACM0"
+SERIAL_BAUD = 115200
+SERIAL_RETRY_SEC = 1.0
+
+WS_HOST = "0.0.0.0"
+WS_PORT = 8765
+
+# ---------------------
+# Logging
+# ---------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s"
+)
+log = logging.getLogger("vehicle-hub")
+
+# ---------------------
+# Globals
+# ---------------------
+clients: Set[websockets.WebSocketServerProtocol] = set()
+
+# ---------------------
+# Serial Reader (non-blocking)
+# ---------------------
+async def serial_reader(queue: asyncio.Queue):
+    while True:
+        try:
+            log.info(f"Opening serial {SERIAL_PORT} @ {SERIAL_BAUD}")
+            ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+            log.info("Serial open OK")
+
+            while True:
+                line = await asyncio.to_thread(ser.readline)
+                if not line:
+                    continue
+
+                try:
+                    msg = json.loads(line.decode(errors="ignore").strip())
+                    await queue.put(msg)
+                except json.JSONDecodeError:
+                    continue
+
+        except Exception as e:
+            log.warning(f"Serial error: {e} (retrying)")
+            await asyncio.sleep(SERIAL_RETRY_SEC)
+
+# ---------------------
+# WebSocket Handler
+# ---------------------
+async def ws_handler(ws):
+    clients.add(ws)
+    try:
+        await ws.send(json.dumps({"type": "hello"}))
+        await asyncio.Future()  # keep alive
+    finally:
+        clients.discard(ws)
+
+# ---------------------
+# Broadcaster
+# ---------------------
+async def broadcaster(queue: asyncio.Queue):
+    while True:
+        msg = await queue.get()
+        dead = set()
+        for ws in clients:
+            try:
+                await ws.send(json.dumps(msg))
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            clients.discard(ws)
+
+# ---------------------
+# Main
+# ---------------------
+async def main():
+    queue = asyncio.Queue()
+
+    asyncio.create_task(serial_reader(queue))
+    asyncio.create_task(broadcaster(queue))
+
+    async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
+        log.info(f"WebSocket listening on ws://{WS_HOST}:{WS_PORT}")
+        await asyncio.Future()
+
+if __name__ == "__main__":
+    asyncio.run(main())

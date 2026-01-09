@@ -1,0 +1,20 @@
+{
+  "digital": {
+    "D2": "left_indicator",
+    "D3": "right_indicator",
+    "D4": "high_beam",
+    "D5": "brake_warning",
+    "D6": "oil_pressure",
+    "D7": "charge_lamp",
+    "D8": "door_ajar",
+    "D9": "spare_1"
+  },
+  "analog": {
+    "A0": { "name": "fuel_sender_raw", "min": 0, "max": 1023, "invert": false },
+    "A1": { "name": "coolant_sender_raw", "min": 0, "max": 1023, "invert": false },
+    "A2": { "name": "aux_analog_2", "min": 0, "max": 1023, "invert": false },
+    "A3": { "name": "aux_analog_3", "min": 0, "max": 1023, "invert": false },
+    "A4": { "name": "aux_analog_4", "min": 0, "max": 1023, "invert": false },
+    "A5": { "name": "aux_analog_5", "min": 0, "max": 1023, "invert": false }
+  }
+}

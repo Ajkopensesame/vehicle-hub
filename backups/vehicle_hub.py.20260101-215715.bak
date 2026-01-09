@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""
+BBB Vehicle Hub (Pajero)
+Arduino Uno -> BBB -> WebSocket
+
+- Reads newline-delimited JSON from serial (/dev/ttyACM0 @ 115200)
+- Converts raw "vehicle_inputs" into stabilized, named "vehicle_state"
+- Broadcasts "vehicle_state" to all WS clients on ws://0.0.0.0:8765
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from typing import Any, Set
+
+import serial
+import websockets
+
+from vehicle_state.mapping import load_pinmap
+from vehicle_state.transformer import VehicleStateTransformer
+
+# ---------------------
+# Configuration
+# ---------------------
+SERIAL_PORT = "/dev/ttyACM0"
+SERIAL_BAUD = 115200
+SERIAL_TIMEOUT_SEC = 1.0
+SERIAL_RETRY_SEC = 1.0
+
+WS_HOST = "0.0.0.0"
+WS_PORT = 8765
+
+PINMAP_PATH = "src/config/pinmap.json"
+
+HEALTH_TICK_MS = 500  # emits a stale/health state periodically
+
+# ---------------------
+# Logging
+# ---------------------
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+log = logging.getLogger("vehicle-hub")
+
+# ---------------------
+# Globals
+# ---------------------
+clients: Set[websockets.WebSocketServerProtocol] = set()
+
+
+async def ws_handler(ws: websockets.WebSocketServerProtocol) -> None:
+    clients.add(ws)
+    try:
+        await ws.send(json.dumps({"type": "hello"}))
+        await asyncio.Future()  # keep alive
+    finally:
+        clients.discard(ws)
+
+
+async def broadcast(obj: dict[str, Any]) -> None:
+    if not clients:
+        return
+    msg = json.dumps(obj, separators=(",", ":"))
+    dead = set()
+    for ws in clients:
+        try:
+            await ws.send(msg)
+        except Exception:
+            dead.add(ws)
+    for ws in dead:
+        clients.discard(ws)
+
+
+async def serial_task(queue: asyncio.Queue[dict[str, Any]]) -> None:
+    """
+    Reads serial in a thread (so we never block the asyncio loop),
+    parses newline JSON, pushes dicts into queue.
+    """
+    while True:
+        try:
+            log.info(f"Opening serial {SERIAL_PORT} @ {SERIAL_BAUD}")
+            ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=SERIAL_TIMEOUT_SEC)
+            log.info("Serial open OK")
+
+            # main read loop
+            while True:
+                # run blocking readline() in a thread
+                line: bytes = await asyncio.to_thread(ser.readline)
+                if not line:
+                    await asyncio.sleep(0)
+                    continue
+
+                try:
+                    s = line.decode(errors="ignore").strip()
+                    if not s:
+                        continue
+                    obj = json.loads(s)
+                    await queue.put(obj)
+                except json.JSONDecodeError:
+                    continue
+
+        except Exception as e:
+            log.warning(f"Serial error: {e} (retrying in {SERIAL_RETRY_SEC}s)")
+            await asyncio.sleep(SERIAL_RETRY_SEC)
+
+
+async def transform_task(
+    in_q: asyncio.Queue[dict[str, Any]],
+    out_q: asyncio.Queue[dict[str, Any]],
+    transformer: VehicleStateTransformer,
+) -> None:
+    """
+    Converts raw frames to vehicle_state.
+    """
+    while True:
+        obj = await in_q.get()
+
+        # Pass through hello for visibility
+        if obj.get("type") == "hello":
+            await out_q.put(obj)
+            continue
+
+        if obj.get("type") != "vehicle_inputs":
+            continue
+
+        state = transformer.transform(obj)
+        await out_q.put(state)
+
+
+async def ws_broadcast_task(out_q: asyncio.Queue[dict[str, Any]]) -> None:
+    while True:
+        obj = await out_q.get()
+        await broadcast(obj)
+
+
+async def health_task(transformer: VehicleStateTransformer) -> None:
+    while True:
+        await asyncio.sleep(HEALTH_TICK_MS / 1000.0)
+        await broadcast(transformer.health_state())
+
+
+async def main() -> None:
+    pinmap = load_pinmap(PINMAP_PATH)
+    transformer = VehicleStateTransformer(pinmap=pinmap)
+
+    raw_q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+    out_q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=200)
+
+    asyncio.create_task(serial_task(raw_q))
+    asyncio.create_task(transform_task(raw_q, out_q, transformer))
+    asyncio.create_task(ws_broadcast_task(out_q))
+    asyncio.create_task(health_task(transformer))
+
+    async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
+        log.info(f"WebSocket listening on ws://{WS_HOST}:{WS_PORT}")
+        await asyncio.Future()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
