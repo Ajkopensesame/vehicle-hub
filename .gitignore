@@ -1,8 +1,6 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 
 # Logs / runtime
 logs/
@@ -13,5 +11,10 @@ logs/
 .vscode/
 .idea/
 
-# Secrets (if ever added later)
+# Secrets
 .env
+
+# Backups
+*.bak
+*.bak.*
+*.orig

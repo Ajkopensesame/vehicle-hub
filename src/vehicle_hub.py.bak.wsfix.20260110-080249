@@ -207,7 +207,7 @@ async def serial_reader_task(q: asyncio.Queue, builder: VehicleStateBuilder) -> 
                 backoff = 0.25
 
                 while True:
-                    line = await asyncio.to_thread(ser.readline)
+                    line = ser.readline()
                     if not line:
                         # timeout; just continue
                         await asyncio.sleep(0)
