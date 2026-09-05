@@ -148,7 +148,10 @@ class VehicleStateBuilder:
                 "norm": round(raw_i / 1023.0, 4),
             }
 
-        # IMPORTANT: Always include full schema (no partials)
+        # IMPORTANT: Always include full schema (no partials).
+        # Phase 1 locked flat camelCase contract for beagley-cluster:
+        # speedKph/rpm/fuelPct/coolantC + gear/overdrive must always be present
+        # (stubs OK until sensors / conversion exist). Hub owns fuel%/coolant°C.
         return {
             "type": "vehicle_state",
             "ts_ms": ts,
@@ -156,6 +159,14 @@ class VehicleStateBuilder:
             "seq": self.seq,
             "uptime_ms": int(frame.get("uptime_ms", 0) or 0),
             "heartbeat": int(frame.get("heartbeat", 0) or 0),
+
+            # Engineering (always present; stub until sensors)
+            "speedKph": 0.0,   # km/h
+            "rpm": 0.0,
+            "fuelPct": 0.0,    # 0..100; TODO: map from analog fuel_sender_raw
+            "coolantC": 0.0,   # °C; TODO: map from analog coolant_sender_raw
+            "gear": "P",       # P|R|N|D|2|1
+            "overdrive": False,
 
             "indicators": {
                 "left": d("D2"),
@@ -170,6 +181,10 @@ class VehicleStateBuilder:
                 "oil": d("D6"),
                 "charge": d("D7"),
                 "door": d("D8"),
+                # VIC extras (optional sources; always present on wire)
+                "check": False,
+                "at": False,
+                "fuel_low": False,
             },
 
             "spares": {
