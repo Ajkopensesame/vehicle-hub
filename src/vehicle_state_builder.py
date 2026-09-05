@@ -65,6 +65,13 @@ class VehicleStateBuilder:
             "uptime_ms": frame.get("uptime_ms", 0),
             "heartbeat": frame.get("heartbeat", 0),
 
+            "speedKph": 0.0,
+            "rpm": 0.0,
+            "fuelPct": 0.0,
+            "coolantC": 0.0,
+            "gear": "P",
+            "overdrive": False,
+
             "indicators": {
                 "left": d("D2"),
                 "right": d("D3"),
@@ -78,6 +85,9 @@ class VehicleStateBuilder:
                 "oil": d("D6"),
                 "charge": d("D7"),
                 "door": d("D8"),
+                "check": False,
+                "at": False,
+                "fuel_low": False,
             },
 
             "spares": {

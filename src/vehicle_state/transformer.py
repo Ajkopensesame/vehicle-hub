@@ -98,6 +98,13 @@ class VehicleStateTransformer:
             "uptime_ms": int(frame.get("uptime_ms", 0)),
             "heartbeat": int(frame.get("heartbeat", 0)),
 
+            "speedKph": 0.0,
+            "rpm": 0.0,
+            "fuelPct": 0.0,
+            "coolantC": 0.0,
+            "gear": "P",
+            "overdrive": False,
+
             "indicators": {
                 "left": named_digital.get("left_indicator", False),
                 "right": named_digital.get("right_indicator", False),
@@ -111,6 +118,9 @@ class VehicleStateTransformer:
                 "oil": named_digital.get("oil_pressure", False),
                 "charge": named_digital.get("charge_lamp", False),
                 "door": named_digital.get("door_ajar", False),
+                "check": False,
+                "at": False,
+                "fuel_low": False,
             },
 
             "spares": {
@@ -132,10 +142,32 @@ class VehicleStateTransformer:
         now_ms = int(time.time() * 1000)
         stale = (now_ms - self._last_frame_ms) > self.stale_timeout_ms if self._last_frame_ms else True
 
+        # Always-complete stub when serial is stalled (good-frame gauge keys present)
         return {
             "type": "vehicle_state",
             "ts_ms": now_ms,
             "source": "bbb_vehicle_hub",
+            "seq": 0,
+            "speedKph": 0.0,
+            "rpm": 0.0,
+            "fuelPct": 0.0,
+            "coolantC": 0.0,
+            "gear": "P",
+            "overdrive": False,
+            "indicators": {
+                "left": False,
+                "right": False,
+                "high_beam": False,
+            },
+            "warnings": {
+                "brake": False,
+                "oil": False,
+                "charge": False,
+                "door": False,
+                "check": False,
+                "at": False,
+                "fuel_low": False,
+            },
             "_health": {
                 "stale": bool(stale)
             }
