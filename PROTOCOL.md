@@ -6,7 +6,7 @@ Producer: `vehicle-hub` on BBB. Consumer: `beagley-cluster` (`VehicleStateClient
 
 - WebSocket JSON text frames
 - Default listen: `0.0.0.0:8765` (`VEHICLE_HUB_WS_HOST` / `VEHICLE_HUB_WS_PORT`)
-- Client URL (cluster): `VEHICLE_HUB_WS_URL` (fallback `ws://192.168.0.7:8765` only if unset)
+- Client URL (cluster): `VEHICLE_HUB_WS_URL` (if unset, the cluster's `codex/maplibre-native-yocto-build` line falls back to `ws://10.24.0.7:8765`; the older `main` line used `ws://192.168.0.7:8765`)
 
 ## Message types
 
