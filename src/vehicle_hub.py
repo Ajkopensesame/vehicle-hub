@@ -26,6 +26,8 @@ from typing import Any, Dict, Optional
 import serial  # pyserial
 import websockets
 
+from vehicle_state.sensors import load_mapper
+
 
 # ----------------------------
 # Logging
@@ -53,6 +55,12 @@ BROADCAST_INTERVAL = 1.0 / max(BROADCAST_HZ, 1.0)
 
 # How long without valid UNO frames until we mark stale
 STALE_AFTER_MS = int(os.getenv("VEHICLE_HUB_STALE_AFTER_MS", "750"))
+
+# Sensor calibration (fuel/coolant tables, optional speed/rpm pulse scales)
+CALIBRATION_PATH = os.getenv(
+    "VEHICLE_HUB_CALIBRATION",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "sensor_calibration.json"),
+)
 
 # Prefer stable by-id path if present
 DEFAULT_BY_ID_GLOB = "/dev/serial/by-id"
@@ -100,6 +108,7 @@ class VehicleStateBuilder:
         self.last_rx_ms: Optional[int] = None
         self.last_frame: Dict[str, Any] = {}
         self.analog_state = defaultdict(lambda: {"smooth": None})
+        self.sensors = load_mapper(CALIBRATION_PATH)
 
     def update_from_uno(self, frame: dict) -> None:
         """Call on every valid UNO vehicle_inputs frame."""
@@ -148,6 +157,24 @@ class VehicleStateBuilder:
                 "norm": round(raw_i / 1023.0, 4),
             }
 
+        analog_out = {
+            "fuel_sender_raw": a("A0"),
+            "coolant_sender_raw": a("A1"),
+            "aux_analog_2": a("A2"),
+            "aux_analog_3": a("A3"),
+            "aux_analog_4": a("A4"),
+            "aux_analog_5": a("A5"),
+        }
+        # Engineering values (stay 0.0 until calibrated; never fabricated).
+        # Stale link => hold 0.0 rather than serve old readings as live.
+        if stale:
+            eng = {"speedKph": 0.0, "rpm": 0.0, "fuelPct": 0.0, "coolantC": 0.0, "fuel_low": False}
+        else:
+            eng = self.sensors.compute(
+                frame,
+                {"A0": analog_out["fuel_sender_raw"]["smooth"], "A1": analog_out["coolant_sender_raw"]["smooth"]},
+            )
+
         # IMPORTANT: Always include full schema (no partials).
         # Phase 1 locked flat camelCase contract for beagley-cluster:
         # speedKph/rpm/fuelPct/coolantC + gear/overdrive must always be present
@@ -161,10 +188,10 @@ class VehicleStateBuilder:
             "heartbeat": int(frame.get("heartbeat", 0) or 0),
 
             # Engineering (always present; stub until sensors)
-            "speedKph": 0.0,   # km/h
-            "rpm": 0.0,
-            "fuelPct": 0.0,    # 0..100; TODO: map from analog fuel_sender_raw
-            "coolantC": 0.0,   # °C; TODO: map from analog coolant_sender_raw
+            "speedKph": eng["speedKph"],   # km/h (UNO speed_hz pulse, if calibrated)
+            "rpm": eng["rpm"],             # (UNO rpm_hz pulse, if calibrated)
+            "fuelPct": eng["fuelPct"],     # 0..100 from A0 via calibration table
+            "coolantC": eng["coolantC"],   # °C from A1 via calibration table
             "gear": "P",       # P|R|N|D|2|1
             "overdrive": False,
 
@@ -184,21 +211,14 @@ class VehicleStateBuilder:
                 # VIC extras (optional sources; always present on wire)
                 "check": False,
                 "at": False,
-                "fuel_low": False,
+                "fuel_low": eng["fuel_low"],
             },
 
             "spares": {
                 "spare_1": d("D9"),
             },
 
-            "analog": {
-                "fuel_sender_raw": a("A0"),
-                "coolant_sender_raw": a("A1"),
-                "aux_analog_2": a("A2"),
-                "aux_analog_3": a("A3"),
-                "aux_analog_4": a("A4"),
-                "aux_analog_5": a("A5"),
-            },
+            "analog": analog_out,
 
             "_health": {
                 "stale": stale,

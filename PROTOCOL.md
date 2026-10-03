@@ -53,7 +53,7 @@ Always-complete flat camelCase frame. Example:
 | `coolantC` | °C |
 | `gear` | `P` \| `R` \| `N` \| `D` \| `2` \| `1` |
 
-Hub owns fuel%/coolant°C conversion (stubs `0.0` until mapped from analog senders).
+Hub owns fuel%/coolant°C conversion. Values come from `src/config/sensor_calibration.json` (override path with `VEHICLE_HUB_CALIBRATION`); a signal with no calibration stays `0.0`. A stale UNO link, or an open/shorted sender (raw ≤5 or ≥1018 counts), also reports `0.0`. `warnings.fuel_low` is true when calibrated `fuelPct` ≤ `fuel.low_pct` (default 10). Wire keys and types are unchanged.
 
 ### Good-frame rule (cluster)
 
