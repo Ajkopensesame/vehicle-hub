@@ -1,0 +1,16 @@
+{
+  "_comment": "Empty tables = signal stays 0.0 (uncalibrated). points are [raw_adc_counts, value]; need >= 2. Capture raw with scripts/sample_raw.py.",
+  "fuel": {
+    "points": [],
+    "low_pct": 10,
+    "fault_low": 5,
+    "fault_high": 1018
+  },
+  "coolant": {
+    "points": [],
+    "fault_low": 5,
+    "fault_high": 1018
+  },
+  "speed": { "hz_key": "speed_hz", "kph_per_hz": 0.0, "max": 300 },
+  "rpm":   { "hz_key": "rpm_hz",   "rpm_per_hz": 0.0, "max": 9000 }
+}
