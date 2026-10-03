@@ -1,5 +1,11 @@
 # vehicle-hub
 
+> **LEGACY.** The live BBB hub is `tools/bbb_hub/vehicle_hub_prod.py` in the
+> [beagley-cluster](https://github.com/Ajkopensesame/beagley-cluster) repo, not this repository. The current
+> contract is `tools/schema/vehicle_state_v1.md` there, and the live hub address is `ws://10.24.0.7:8765`
+> (the `192.168.0.7` address below is from the old hotspot-era network). This file is kept for history
+> and for the Phase 1 flat camelCase contract this repo implements.
+
 BeagleBone Black WebSocket hub: reads Arduino `vehicle_inputs` over serial and broadcasts always-complete `vehicle_state` JSON to cluster clients (e.g. beagley-cluster).
 
 ## Quick start
